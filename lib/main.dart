@@ -10,6 +10,8 @@ void main() {
   runApp(const MyApp());
 }
 
+final GlobalKey<HomePageState> homeKey = GlobalKey();
+
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
 
@@ -21,7 +23,7 @@ class MyApp extends StatelessWidget {
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
         scaffoldBackgroundColor: const Color(0xFF01060c),
       ),
-      home: const HomePage(),
+      home: HomePage(key: homeKey),
     );
   }
 }
@@ -121,11 +123,17 @@ class HomePage extends StatefulWidget {
   const HomePage({super.key});
 
   @override
-  State<HomePage> createState() => _HomePageState();
+  State<HomePage> createState() => HomePageState();
 }
 
-class _HomePageState extends State<HomePage> {
+class HomePageState extends State<HomePage> {
   int _selectedIndex = 0;
+
+  // Método público para recarregar os dados do dashboard
+  Future<void> refresh() async {
+    await _loadInitialData();
+  }
+
   final DatabaseHelper _dbHelper = DatabaseHelper();
   late List<Map<String, String>> _products = [];
   late List<Map<String, String>> _clients = [];
@@ -255,13 +263,10 @@ class _HomePageState extends State<HomePage> {
               onPressed: () async {
                 await Navigator.push(
                   context,
-                  MaterialPageRoute(
-                    builder: (context) =>
-                        SalesPage(products: _products, clients: _clients),
-                  ),
+                  MaterialPageRoute(builder: (context) => const SalesPage()),
                 );
                 // Recarregar dados após adicionar venda
-                await _loadInitialData();
+                homeKey.currentState?.refresh();
                 _productsKey.currentState?.loadProducts();
                 _clientsKey.currentState?.loadClients();
                 _statsKey.currentState?.refresh();

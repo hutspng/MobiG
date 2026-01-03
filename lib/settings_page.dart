@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'database/database_helper.dart';
+import 'main.dart';
 
 class SettingsPage extends StatefulWidget {
   const SettingsPage({super.key});
@@ -53,6 +55,8 @@ class _SettingsPageState extends State<SettingsPage> {
             icon: Icons.dark_mode_outlined,
           ),
           _DailyFocusTile(value: _dailyFocus, onChanged: _saveDailyFocus),
+          const SizedBox(height: 16),
+          _DeleteDataButton(context: context),
         ],
       ),
     );
@@ -159,6 +163,81 @@ class _DailyFocusTile extends StatelessWidget {
             inactiveTrackColor: Colors.grey[800],
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _DeleteDataButton extends StatelessWidget {
+  const _DeleteDataButton({required this.context});
+
+  final BuildContext context;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: double.infinity,
+      child: ElevatedButton(
+        style: ElevatedButton.styleFrom(
+          backgroundColor: Colors.red[700],
+          foregroundColor: Colors.white,
+          padding: const EdgeInsets.symmetric(vertical: 16),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(10),
+          ),
+        ),
+        onPressed: () {
+          showDialog(
+            context: context,
+            builder: (context) => AlertDialog(
+              backgroundColor: const Color(0xFF1a1a2e),
+              title: const Text(
+                'Deletar todos os dados?',
+                style: TextStyle(color: Colors.white),
+              ),
+              content: const Text(
+                'Esta ação é irreversível. Todos os clientes, produtos e compras serão removidos.',
+                style: TextStyle(color: Colors.grey),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text(
+                    'Cancelar',
+                    style: TextStyle(color: Colors.cyan),
+                  ),
+                ),
+                TextButton(
+                  onPressed: () async {
+                    Navigator.pop(context);
+                    final dbHelper = DatabaseHelper();
+                    await dbHelper.deleteAllData();
+
+                    // Recarregar dashboard
+                    homeKey.currentState?.refresh();
+
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Todos os dados foram deletados!'),
+                          backgroundColor: Colors.red,
+                        ),
+                      );
+                    }
+                  },
+                  child: const Text(
+                    'Deletar',
+                    style: TextStyle(color: Colors.red),
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
+        child: const Text(
+          'Deletar Dados',
+          style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+        ),
       ),
     );
   }

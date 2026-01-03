@@ -171,6 +171,11 @@ class DatabaseHelper {
 
   Future<int> deleteClient(int id) async {
     final db = await database;
+
+    // Deletar todas as vendas associadas ao cliente
+    await db.delete('sales', where: 'client_id = ?', whereArgs: [id]);
+
+    // Deletar o cliente
     return db.delete('clients', where: 'id = ?', whereArgs: [id]);
   }
 
@@ -200,6 +205,7 @@ class DatabaseHelper {
       'unit_price': unitPrice,
       'total_price': totalPrice,
       'notes': notes,
+      'sale_date': DateTime.now().toIso8601String(),
     });
   }
 
@@ -373,6 +379,16 @@ class DatabaseHelper {
   }
 
   // ===== LIMPEZA =====
+  Future<void> deleteAllData() async {
+    final db = await database;
+    // Deletar todas as vendas
+    await db.delete('sales');
+    // Deletar todos os clientes
+    await db.delete('clients');
+    // Deletar todos os produtos
+    await db.delete('products');
+  }
+
   Future<void> deleteDatabase() async {
     Directory documentsDirectory = await getApplicationDocumentsDirectory();
     String path = join(documentsDirectory.path, 'mobig.db');

@@ -2,20 +2,38 @@ import 'package:flutter/material.dart';
 import 'database/database_helper.dart';
 
 class SalesPage extends StatefulWidget {
-  const SalesPage({super.key, required this.products, required this.clients});
-
-  final List<Map<String, String>> products;
-  final List<Map<String, String>> clients;
+  const SalesPage({super.key});
 
   @override
   State<SalesPage> createState() => _SalesPageState();
 }
 
 class _SalesPageState extends State<SalesPage> {
+  final DatabaseHelper _dbHelper = DatabaseHelper();
+  List<Map<String, dynamic>> _products = [];
+  List<Map<String, dynamic>> _clients = [];
+  bool _isLoading = true;
+
   String? selectedClient;
   String? selectedProduct;
   int quantity = 1;
   final notesController = TextEditingController();
+
+  @override
+  void initState() {
+    super.initState();
+    _loadData();
+  }
+
+  Future<void> _loadData() async {
+    final products = await _dbHelper.getProducts();
+    final clients = await _dbHelper.getClients();
+    setState(() {
+      _products = products;
+      _clients = clients;
+      _isLoading = false;
+    });
+  }
 
   @override
   void dispose() {
@@ -25,17 +43,37 @@ class _SalesPageState extends State<SalesPage> {
 
   double get subtotal {
     if (selectedProduct == null) return 0;
-    final product = widget.products.firstWhere(
+    final product = _products.firstWhere(
       (p) => p['name'] == selectedProduct,
-      orElse: () => {'price': 'R\$ 0.00'},
+      orElse: () => {'price': 0.0},
     );
-    final priceText = product['price']!.replaceAll(RegExp(r'[^\d.]'), '');
-    final price = double.tryParse(priceText) ?? 0;
+    final price = (product['price'] as double?) ?? 0.0;
     return price * quantity;
   }
 
   @override
   Widget build(BuildContext context) {
+    if (_isLoading) {
+      return Scaffold(
+        backgroundColor: const Color(0xFF01060c),
+        appBar: AppBar(
+          backgroundColor: const Color(0xFF01060c),
+          elevation: 0,
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back, color: Colors.white),
+            onPressed: () => Navigator.pop(context),
+          ),
+          title: const Text(
+            'Nova Compra',
+            style: TextStyle(color: Colors.white, fontSize: 20),
+          ),
+        ),
+        body: const Center(
+          child: CircularProgressIndicator(color: Colors.cyan),
+        ),
+      );
+    }
+
     return Scaffold(
       backgroundColor: const Color(0xFF01060c),
       appBar: AppBar(
@@ -85,12 +123,12 @@ class _SalesPageState extends State<SalesPage> {
                   underline: const SizedBox(),
                   style: const TextStyle(color: Colors.white),
                   dropdownColor: const Color(0xFF1a1a2e),
-                  items: widget.clients.map((client) {
+                  items: _clients.map((client) {
                     return DropdownMenuItem(
-                      value: client['name'],
+                      value: client['name'] as String,
                       child: Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 12),
-                        child: Text(client['name']!),
+                        child: Text(client['name'] as String),
                       ),
                     );
                   }).toList(),
@@ -131,13 +169,13 @@ class _SalesPageState extends State<SalesPage> {
                   underline: const SizedBox(),
                   style: const TextStyle(color: Colors.white),
                   dropdownColor: const Color(0xFF1a1a2e),
-                  items: widget.products.map((product) {
+                  items: _products.map((product) {
                     return DropdownMenuItem(
-                      value: product['name'],
+                      value: product['name'] as String,
                       child: Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 12),
                         child: Text(
-                          '${product['name']} - ${product['price']}',
+                          '${product['name']} - R\$ ${(product['price'] as double).toStringAsFixed(2)}',
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
@@ -322,58 +360,39 @@ class _SalesPageState extends State<SalesPage> {
                       ? null
                       : () async {
                           try {
-                            final dbHelper = DatabaseHelper();
+                            // Encontrar IDs do cliente e produto nos dados já carregados
+                            final client = _clients.firstWhere(
+                              (c) => c['name'] == selectedClient,
+                            );
+                            final product = _products.firstWhere(
+                              (p) => p['name'] == selectedProduct,
+                            );
 
-                            // Encontrar IDs do cliente e produto
-                            int? clientId;
-                            int? productId;
-                            double? productPrice;
+                            final clientId = client['id'] as int;
+                            final productId = product['id'] as int;
+                            final productPrice = product['price'] as double;
+                            final totalPrice = productPrice * quantity;
 
-                            // Buscar cliente
-                            final clients = await dbHelper.getClients();
-                            for (var client in clients) {
-                              if (client['name'] == selectedClient) {
-                                clientId = client['id'];
-                                break;
-                              }
-                            }
+                            await _dbHelper.insertSale(
+                              clientId: clientId,
+                              productId: productId,
+                              quantity: quantity,
+                              unitPrice: productPrice,
+                              totalPrice: totalPrice,
+                              notes: notesController.text.isEmpty
+                                  ? null
+                                  : notesController.text,
+                            );
 
-                            // Buscar produto
-                            final products = await dbHelper.getProducts();
-                            for (var product in products) {
-                              if (product['name'] == selectedProduct) {
-                                productId = product['id'];
-                                productPrice = product['price'] as double;
-                                break;
-                              }
-                            }
-
-                            if (clientId != null &&
-                                productId != null &&
-                                productPrice != null) {
-                              final totalPrice = productPrice * quantity;
-
-                              await dbHelper.insertSale(
-                                clientId: clientId,
-                                productId: productId,
-                                quantity: quantity,
-                                unitPrice: productPrice,
-                                totalPrice: totalPrice,
-                                notes: notesController.text.isEmpty
-                                    ? null
-                                    : notesController.text,
-                              );
-
-                              if (mounted) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(
-                                    content: Text(
-                                      'Compra registrada com sucesso!',
-                                    ),
+                            if (mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text(
+                                    'Compra registrada com sucesso!',
                                   ),
-                                );
-                                Navigator.pop(context);
-                              }
+                                ),
+                              );
+                              Navigator.pop(context);
                             }
                           } catch (e) {
                             if (mounted) {
