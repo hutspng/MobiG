@@ -178,7 +178,7 @@ class HomePageState extends State<HomePage> {
   }
 
   Future<void> _loadRecentActivities() async {
-    final activities = await _dbHelper.getRecentActivities(limit: 5);
+    final activities = await _dbHelper.getSales(limit: 5);
     setState(() {
       _recentActivities = activities;
     });

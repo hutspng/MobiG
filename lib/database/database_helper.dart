@@ -121,10 +121,7 @@ class DatabaseHelper {
       where: 'id = ?',
       whereArgs: [id],
     );
-    if (results.isNotEmpty) {
-      return results.first;
-    }
-    return null;
+    return results.isNotEmpty ? results.first : null;
   }
 
   Future<int> updateProduct({
@@ -172,10 +169,7 @@ class DatabaseHelper {
   Future<Map<String, dynamic>?> getClient(int id) async {
     final db = await database;
     final results = await db.query('clients', where: 'id = ?', whereArgs: [id]);
-    if (results.isNotEmpty) {
-      return results.first;
-    }
-    return null;
+    return results.isNotEmpty ? results.first : null;
   }
 
   Future<int> updateClient({
@@ -216,12 +210,10 @@ class DatabaseHelper {
 
     // Atualizar dados do cliente apenas se a compra for marcada como paga
     if (paid) {
-      final client = await getClient(clientId);
-      if (client != null) {
-        final newPurchases = (client['purchases'] as int) + 1;
-        final newTotal = (client['total_value'] as double) + totalPrice;
-        await updateClientStats(clientId, newPurchases, newTotal);
-      }
+      await db.rawUpdate(
+        'UPDATE clients SET purchases = purchases + 1, total_value = total_value + ? WHERE id = ?',
+        [totalPrice, clientId],
+      );
     }
 
     return db.insert('sales', {
@@ -236,29 +228,32 @@ class DatabaseHelper {
     });
   }
 
-  Future<int> updateClientStats(
-    int clientId,
-    int purchases,
-    double totalValue,
-  ) async {
-    final db = await database;
-    return db.update(
-      'clients',
-      {'purchases': purchases, 'total_value': totalValue},
-      where: 'id = ?',
-      whereArgs: [clientId],
-    );
-  }
 
-  Future<List<Map<String, dynamic>>> getSales() async {
+  Future<List<Map<String, dynamic>>> getSales({int? clientId, int? limit}) async {
     final db = await database;
+    String where = '';
+    List<dynamic> args = [];
+    
+    if (clientId != null) {
+      where = 'WHERE s.client_id = ?';
+      args.add(clientId);
+    }
+    
+    String limitClause = '';
+    if (limit != null) {
+      limitClause = 'LIMIT ?';
+      args.add(limit);
+    }
+    
     return db.rawQuery('''
       SELECT s.*, c.name as client_name, p.name as product_name
       FROM sales s
       JOIN clients c ON s.client_id = c.id
       JOIN products p ON s.product_id = p.id
+      $where
       ORDER BY s.sale_date DESC
-    ''');
+      $limitClause
+    ''', args);
   }
 
   Future<List<Map<String, dynamic>>> getSalesToday() async {
@@ -287,46 +282,13 @@ class DatabaseHelper {
     );
   }
 
-  Future<List<Map<String, dynamic>>> getSalesByClient(int clientId) async {
-    final db = await database;
-    return db.rawQuery(
-      '''
-      SELECT s.*, c.name as client_name, p.name as product_name
-      FROM sales s
-      JOIN clients c ON s.client_id = c.id
-      JOIN products p ON s.product_id = p.id
-      WHERE s.client_id = ?
-      ORDER BY s.sale_date DESC
-    ''',
-      [clientId],
-    );
-  }
 
-  Future<List<Map<String, dynamic>>> getRecentSales({int limit = 10}) async {
-    final db = await database;
-    return db.rawQuery(
-      '''
-      SELECT s.*, c.name as client_name, p.name as product_name
-      FROM sales s
-      JOIN clients c ON s.client_id = c.id
-      JOIN products p ON s.product_id = p.id
-      ORDER BY s.sale_date DESC
-      LIMIT ?
-    ''',
-      [limit],
-    );
-  }
 
   Future<int> deleteSale(int id) async {
     final db = await database;
-    return db.delete('sales', where: 'id = ?', whereArgs: [id]);
-  }
-
-  Future<int> updateSalePaidStatus(int saleId, bool paid) async {
-    final db = await database;
-
-    // Buscar a venda para obter informações
-    final sale = await db.query('sales', where: 'id = ?', whereArgs: [saleId]);
+    
+    // Buscar a venda para obter informações antes de deletar
+    final sale = await db.query('sales', where: 'id = ?', whereArgs: [id]);
     if (sale.isEmpty) return 0;
 
     final saleData = sale.first;
@@ -334,31 +296,52 @@ class DatabaseHelper {
     final totalPrice = saleData['total_price'] as double;
     final wasPaid = (saleData['paid'] as int) == 1;
 
-    // Se está mudando de não pago para pago
-    if (!wasPaid && paid) {
-      final client = await getClient(clientId);
-      if (client != null) {
-        final newPurchases = (client['purchases'] as int) + 1;
-        final newTotal = (client['total_value'] as double) + totalPrice;
-        await updateClientStats(clientId, newPurchases, newTotal);
-      }
-    }
-    // Se está mudando de pago para não pago
-    else if (wasPaid && !paid) {
-      final client = await getClient(clientId);
-      if (client != null) {
-        final newPurchases = (client['purchases'] as int) - 1;
-        final newTotal = (client['total_value'] as double) - totalPrice;
-        await updateClientStats(clientId, newPurchases, newTotal);
-      }
+    // Se era uma venda paga, atualizar stats do cliente
+    if (wasPaid) {
+      await db.rawUpdate(
+        'UPDATE clients SET purchases = purchases - 1, total_value = total_value - ? WHERE id = ?',
+        [totalPrice, clientId],
+      );
     }
 
-    return db.update(
-      'sales',
-      {'paid': paid ? 1 : 0},
-      where: 'id = ?',
-      whereArgs: [saleId],
-    );
+    return db.delete('sales', where: 'id = ?', whereArgs: [id]);
+  }
+
+  Future<int> updateSalePaidStatus(int saleId, bool paid) async {
+    final db = await database;
+
+    // Buscar a venda em transação
+    return db.transaction((txn) async {
+      final sale = await txn.query('sales', where: 'id = ?', whereArgs: [saleId]);
+      if (sale.isEmpty) return 0;
+
+      final saleData = sale.first;
+      final clientId = saleData['client_id'] as int;
+      final totalPrice = saleData['total_price'] as double;
+      final wasPaid = (saleData['paid'] as int) == 1;
+
+      // Se está mudando de não pago para pago
+      if (!wasPaid && paid) {
+        await txn.rawUpdate(
+          'UPDATE clients SET purchases = purchases + 1, total_value = total_value + ? WHERE id = ?',
+          [totalPrice, clientId],
+        );
+      }
+      // Se está mudando de pago para não pago
+      else if (wasPaid && !paid) {
+        await txn.rawUpdate(
+          'UPDATE clients SET purchases = purchases - 1, total_value = total_value - ? WHERE id = ?',
+          [totalPrice, clientId],
+        );
+      }
+
+      return txn.update(
+        'sales',
+        {'paid': paid ? 1 : 0},
+        where: 'id = ?',
+        whereArgs: [saleId],
+      );
+    });
   }
 
   Future<int> updateClientSalesPaidStatus(int clientId, bool paid) async {
@@ -388,7 +371,7 @@ class DatabaseHelper {
     final db = await database;
     final result = await db.rawQuery('''
       SELECT COUNT(*) as count FROM sales
-      WHERE strftime('%Y-%m', sale_date) = strftime('%Y-%m', 'now')
+      WHERE paid = 1 AND strftime('%Y-%m', sale_date) = strftime('%Y-%m', 'now')
     ''');
     return (result.first['count'] as int?) ?? 0;
   }
@@ -397,7 +380,7 @@ class DatabaseHelper {
     final db = await database;
     final result = await db.rawQuery('''
       SELECT SUM(total_price) as total FROM sales
-      WHERE strftime('%Y-%m', sale_date) = strftime('%Y-%m', 'now')
+      WHERE paid = 1 AND strftime('%Y-%m', sale_date) = strftime('%Y-%m', 'now')
     ''');
     return (result.first['total'] as double?) ?? 0.0;
   }
@@ -423,8 +406,7 @@ class DatabaseHelper {
       '''
       SELECT c.id, c.name, c.purchases, c.total_value
       FROM clients c
-      WHERE c.purchases > 0
-      ORDER BY c.purchases DESC
+      ORDER BY c.purchases DESC, c.name ASC
       LIMIT ?
     ''',
       [limit],
@@ -447,28 +429,6 @@ class DatabaseHelper {
     return (result.first['total'] as double?) ?? 0.0;
   }
 
-  Future<List<Map<String, dynamic>>> getRecentActivities({
-    int limit = 5,
-  }) async {
-    final db = await database;
-    return db.rawQuery(
-      '''
-      SELECT 
-        s.id,
-        c.name as client_name,
-        p.name as product_name,
-        s.quantity,
-        s.total_price,
-        s.sale_date
-      FROM sales s
-      JOIN clients c ON s.client_id = c.id
-      JOIN products p ON s.product_id = p.id
-      ORDER BY s.sale_date DESC
-      LIMIT ?
-    ''',
-      [limit],
-    );
-  }
 
   // ===== LIMPEZA =====
   Future<void> deleteAllData() async {
@@ -481,9 +441,18 @@ class DatabaseHelper {
     await db.delete('products');
   }
 
-  Future<void> deleteDatabase() async {
+  Future<void> deleteAllDatabase() async {
+    // Fechar conexão primeiro
+    if (_database != null) {
+      await _database!.close();
+      _database = null;
+    }
+    
     Directory documentsDirectory = await getApplicationDocumentsDirectory();
     String path = join(documentsDirectory.path, 'mobig.db');
-    await deleteDatabase();
+    final file = File(path);
+    if (await file.exists()) {
+      await file.delete();
+    }
   }
 }
