@@ -17,6 +17,7 @@ class _SalesPageState extends State<SalesPage> {
   String? selectedClient;
   String? selectedProduct;
   int quantity = 1;
+  bool _isPaid = false;
   final notesController = TextEditingController();
 
   @override
@@ -270,6 +271,32 @@ class _SalesPageState extends State<SalesPage> {
                   ),
                 ),
               ),
+              const SizedBox(height: 20),
+              // Checkbox Pago
+              Container(
+                decoration: BoxDecoration(
+                  color: const Color(0xFF1a1a2e),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.grey[800]!, width: 1),
+                ),
+                child: CheckboxListTile(
+                  value: _isPaid,
+                  onChanged: (value) {
+                    setState(() {
+                      _isPaid = value ?? false;
+                    });
+                  },
+                  title: const Text(
+                    'Marcar como Pago',
+                    style: TextStyle(color: Colors.white, fontSize: 14),
+                  ),
+                  activeColor: const Color(0xFF1558c9),
+                  checkColor: Colors.white,
+                  side: MaterialStateBorderSide.resolveWith(
+                    (states) => BorderSide(color: Colors.grey[700]!),
+                  ),
+                ),
+              ),
               const SizedBox(height: 30),
               // Subtotal
               Container(
@@ -382,6 +409,7 @@ class _SalesPageState extends State<SalesPage> {
                               notes: notesController.text.isEmpty
                                   ? null
                                   : notesController.text,
+                              paid: _isPaid,
                             );
 
                             if (mounted) {

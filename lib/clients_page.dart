@@ -213,7 +213,9 @@ class ClientsPageState extends State<ClientsPage> {
 }
 
 void _showEditClientDialog(BuildContext context, Map<String, String> client) {
+  final nameController = TextEditingController(text: client['name']);
   final nicknameController = TextEditingController(text: client['nickname']);
+  final dbHelper = DatabaseHelper();
 
   showDialog(
     context: context,
@@ -222,71 +224,166 @@ void _showEditClientDialog(BuildContext context, Map<String, String> client) {
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       child: Padding(
         padding: const EdgeInsets.all(20),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                const Text(
-                  'Editar Cliente',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text(
+                    'Editar Cliente',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  IconButton(
+                    onPressed: () => Navigator.pop(context),
+                    icon: const Icon(Icons.close, color: Colors.white),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              _buildClientTextField(
+                'Nome Completo',
+                'Ex: Maria Silva',
+                nameController,
+              ),
+              const SizedBox(height: 12),
+              _buildClientTextField(
+                'Apelido',
+                'Como prefere ser chamado',
+                nicknameController,
+              ),
+              const SizedBox(height: 20),
+              const Divider(color: Colors.grey),
+              const SizedBox(height: 16),
+              const Text(
+                'Compras',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(
+                    child: ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.green,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                      ),
+                      onPressed: () async {
+                        final clientId = int.parse(client['id']!);
+                        await dbHelper.updateClientSalesPaidStatus(
+                          clientId,
+                          true,
+                        );
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text(
+                                'Todas as compras marcadas como pagas',
+                              ),
+                            ),
+                          );
+                        }
+                      },
+                      icon: const Icon(Icons.check_circle),
+                      label: const Text('Marcar Tudo'),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.red,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                      ),
+                      onPressed: () async {
+                        final clientId = int.parse(client['id']!);
+                        await dbHelper.updateClientSalesPaidStatus(
+                          clientId,
+                          false,
+                        );
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text(
+                                'Todas as compras marcadas como pendentes',
+                              ),
+                            ),
+                          );
+                        }
+                      },
+                      icon: const Icon(Icons.cancel),
+                      label: const Text('Desmarcar Tudo'),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 20),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF1558c9),
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10),
                   ),
                 ),
-                IconButton(
-                  onPressed: () => Navigator.pop(context),
-                  icon: const Icon(Icons.close, color: Colors.white),
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
-            Text(
-              'Cliente',
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 14,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              client['name']!,
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 16,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            const SizedBox(height: 16),
-            _buildClientTextField(
-              'Apelido',
-              'Como prefere ser chamado',
-              nicknameController,
-            ),
-            const SizedBox(height: 20),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF1558c9),
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(vertical: 14),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(10),
+                onPressed: () async {
+                  if (nameController.text.isEmpty) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Preencha o nome do cliente'),
+                      ),
+                    );
+                    return;
+                  }
+
+                  try {
+                    final clientId = int.parse(client['id']!);
+                    await dbHelper.updateClient(
+                      id: clientId,
+                      name: nameController.text,
+                      nickname: nicknameController.text,
+                    );
+
+                    if (context.mounted) {
+                      Navigator.pop(context);
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Cliente atualizado com sucesso!'),
+                        ),
+                      );
+                    }
+                  } catch (e) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text('Erro ao atualizar cliente: $e')),
+                    );
+                  }
+                },
+                child: const Text(
+                  'Salvar Alterações',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
                 ),
               ),
-              onPressed: () {
-                // TODO: Salvar alterações do cliente
-                Navigator.pop(context);
-              },
-              child: const Text(
-                'Salvar Alterações',
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
-              ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     ),

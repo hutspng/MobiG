@@ -12,6 +12,11 @@
 .swiftpm/
 migrate_working_dir/
 
+# Python
+RUN_EMULATOR_README.md
+run_emulator.py
+
+
 # IntelliJ related
 *.iml
 *.ipr

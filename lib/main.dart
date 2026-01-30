@@ -297,106 +297,112 @@ class HomePageState extends State<HomePage> {
   }
 
   Widget _buildHomeContent() {
-    return SingleChildScrollView(
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const SizedBox(height: 8),
-            const Text(
-              'Gestão de Compras',
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: 28,
-                fontWeight: FontWeight.bold,
+    return RefreshIndicator(
+      color: Colors.cyan,
+      backgroundColor: const Color(0xFF1a1a2e),
+      onRefresh: _loadInitialData,
+      child: SingleChildScrollView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        child: Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const SizedBox(height: 8),
+              const Text(
+                'Gestão de Compras',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 28,
+                  fontWeight: FontWeight.bold,
+                ),
               ),
-            ),
-            const SizedBox(height: 8),
-            const Text(
-              'Gerencie produtos, clientes e vendas',
-              style: TextStyle(color: Colors.grey, fontSize: 14),
-            ),
-            const SizedBox(height: 24),
-            GridView.count(
-              crossAxisCount: 2,
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              mainAxisSpacing: 16,
-              crossAxisSpacing: 16,
-              children: [
-                GestureDetector(
-                  onTap: () => setState(() => _selectedIndex = 1),
-                  child: _buildStatCard(
-                    icon: Icons.shopping_bag,
-                    number: _totalProducts.toString(),
-                    label: 'Produtos',
-                  ),
-                ),
-                GestureDetector(
-                  onTap: () => setState(() => _selectedIndex = 2),
-                  child: _buildStatCard(
-                    icon: Icons.people,
-                    number: _totalClients.toString(),
-                    label: 'Clientes',
-                  ),
-                ),
-                _buildStatCard(
-                  icon: Icons.trending_up,
-                  number: _totalSales.toString(),
-                  label: 'Compras totais',
-                ),
-                GestureDetector(
-                  onTap: () => setState(() => _selectedIndex = 3),
-                  child: _buildStatCard(
-                    icon: Icons.attach_money,
-                    number: 'R\$ ${_totalRevenue.toStringAsFixed(2)}',
-                    label: 'Faturamento',
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 32),
-            const Text(
-              'Atividade Recente',
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: 20,
-                fontWeight: FontWeight.bold,
+              const SizedBox(height: 8),
+              const Text(
+                'Gerencie produtos, clientes e vendas',
+                style: TextStyle(color: Colors.grey, fontSize: 14),
               ),
-            ),
-            const SizedBox(height: 16),
-            _recentActivities.isEmpty
-                ? Center(
-                    child: Text(
-                      'Nenhuma atividade registrada',
-                      style: TextStyle(color: Colors.grey[500]),
+              const SizedBox(height: 24),
+              GridView.count(
+                crossAxisCount: 2,
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                mainAxisSpacing: 16,
+                crossAxisSpacing: 16,
+                children: [
+                  GestureDetector(
+                    onTap: () => setState(() => _selectedIndex = 1),
+                    child: _buildStatCard(
+                      icon: Icons.shopping_bag,
+                      number: _totalProducts.toString(),
+                      label: 'Produtos',
                     ),
-                  )
-                : Column(
-                    children: _recentActivities.map((activity) {
-                      final clientName = activity['client_name'] as String;
-                      final productName = activity['product_name'] as String;
-                      final value = activity['total_price'] as double;
-                      final timeStr = _formatTimeAgo(
-                        activity['sale_date'] as String,
-                      );
-
-                      return Column(
-                        children: [
-                          _buildActivityItem(
-                            name: clientName,
-                            product: productName,
-                            value: 'R\$ ${value.toStringAsFixed(2)}',
-                            time: timeStr,
-                          ),
-                          const SizedBox(height: 12),
-                        ],
-                      );
-                    }).toList(),
                   ),
-            const SizedBox(height: 32),
-          ],
+                  GestureDetector(
+                    onTap: () => setState(() => _selectedIndex = 2),
+                    child: _buildStatCard(
+                      icon: Icons.people,
+                      number: _totalClients.toString(),
+                      label: 'Clientes',
+                    ),
+                  ),
+                  _buildStatCard(
+                    icon: Icons.trending_up,
+                    number: _totalSales.toString(),
+                    label: 'Compras totais',
+                  ),
+                  GestureDetector(
+                    onTap: () => setState(() => _selectedIndex = 3),
+                    child: _buildStatCard(
+                      icon: Icons.attach_money,
+                      number: 'R\$ ${_totalRevenue.toStringAsFixed(2)}',
+                      label: 'Faturamento',
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 32),
+              const Text(
+                'Atividade Recente',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 16),
+              _recentActivities.isEmpty
+                  ? Center(
+                      child: Text(
+                        'Nenhuma atividade registrada',
+                        style: TextStyle(color: Colors.grey[500]),
+                      ),
+                    )
+                  : Column(
+                      children: _recentActivities.map((activity) {
+                        final clientName = activity['client_name'] as String;
+                        final productName = activity['product_name'] as String;
+                        final value = activity['total_price'] as double;
+                        final timeStr = _formatTimeAgo(
+                          activity['sale_date'] as String,
+                        );
+
+                        return Column(
+                          children: [
+                            _buildActivityItem(
+                              name: clientName,
+                              product: productName,
+                              value: 'R\$ ${value.toStringAsFixed(2)}',
+                              time: timeStr,
+                            ),
+                            const SizedBox(height: 12),
+                          ],
+                        );
+                      }).toList(),
+                    ),
+              const SizedBox(height: 32),
+            ],
+          ),
         ),
       ),
     );

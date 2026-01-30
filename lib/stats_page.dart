@@ -21,6 +21,7 @@ class StatsPageState extends State<StatsPage> {
   final ScrollController _scrollController = ScrollController();
   bool _showScrollToTop = false;
   List<Map<String, dynamic>> _topProducts = [];
+  List<Map<String, dynamic>> _topClients = [];
   List<Map<String, dynamic>> _allSales = [];
   bool _dailyFocus = false;
 
@@ -58,12 +59,14 @@ class StatsPageState extends State<StatsPage> {
 
   Future<void> _loadStatsData() async {
     final topProducts = await _dbHelper.getTopProducts(limit: 5);
+    final topClients = await _dbHelper.getTopClients(limit: 3);
     final allSales = _dailyFocus
         ? await _dbHelper.getSalesToday()
         : await _dbHelper.getSales();
 
     setState(() {
       _topProducts = topProducts;
+      _topClients = topClients;
       _allSales = allSales;
     });
   }
@@ -74,10 +77,16 @@ class StatsPageState extends State<StatsPage> {
 
   @override
   Widget build(BuildContext context) {
-    final maxValue = _topProducts.isEmpty
+    final maxValueProducts = _topProducts.isEmpty
         ? 100
         : _topProducts
               .map((e) => (e['sales_count'] as int?) ?? 0)
+              .reduce((a, b) => a > b ? a : b);
+
+    final maxValueClients = _topClients.isEmpty
+        ? 100
+        : _topClients
+              .map((e) => (e['purchases'] as int?) ?? 0)
               .reduce((a, b) => a > b ? a : b);
 
     return Stack(
@@ -103,7 +112,19 @@ class StatsPageState extends State<StatsPage> {
                   style: TextStyle(color: Colors.grey, fontSize: 14),
                 ),
                 const SizedBox(height: 16),
-                _buildChart(_topProducts, maxValue),
+                _buildChart(
+                  _topProducts,
+                  maxValueProducts,
+                  'Produtos Mais Vendidos',
+                  'sales_count',
+                ),
+                const SizedBox(height: 24),
+                _buildChart(
+                  _topClients,
+                  maxValueClients,
+                  'Top Clientes',
+                  'purchases',
+                ),
                 const SizedBox(height: 24),
                 const Text(
                   'Histórico de Compras',
@@ -155,7 +176,12 @@ class StatsPageState extends State<StatsPage> {
     );
   }
 
-  Widget _buildChart(List<Map<String, dynamic>> data, int maxValue) {
+  Widget _buildChart(
+    List<Map<String, dynamic>> data,
+    int maxValue,
+    String title,
+    String countKey,
+  ) {
     if (data.isEmpty) {
       return Container(
         decoration: BoxDecoration(
@@ -166,10 +192,7 @@ class StatsPageState extends State<StatsPage> {
         padding: const EdgeInsets.all(16),
         height: 200,
         child: Center(
-          child: Text(
-            'Sem dados de vendas',
-            style: TextStyle(color: Colors.grey[500]),
-          ),
+          child: Text('Sem dados', style: TextStyle(color: Colors.grey[500])),
         ),
       );
     }
@@ -191,12 +214,15 @@ class StatsPageState extends State<StatsPage> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
-            children: const [
-              Icon(Icons.show_chart, color: Colors.cyan),
-              SizedBox(width: 8),
+            children: [
+              Icon(
+                countKey == 'purchases' ? Icons.emoji_events : Icons.show_chart,
+                color: countKey == 'purchases' ? Colors.amber : Colors.cyan,
+              ),
+              const SizedBox(width: 8),
               Text(
-                'Produtos Mais Vendidos',
-                style: TextStyle(
+                title,
+                style: const TextStyle(
                   color: Colors.white,
                   fontSize: 16,
                   fontWeight: FontWeight.bold,
@@ -262,10 +288,9 @@ class StatsPageState extends State<StatsPage> {
                           crossAxisAlignment: CrossAxisAlignment.end,
                           mainAxisAlignment: MainAxisAlignment.spaceAround,
                           children: data.map((item) {
-                            final salesCount =
-                                (item['sales_count'] as int?) ?? 0;
+                            final count = (item[countKey] as int?) ?? 0;
                             final barHeight = gridMax > 0
-                                ? (salesCount / gridMax) * 180
+                                ? (count / gridMax) * 180
                                 : 0.0;
                             return Padding(
                               padding: const EdgeInsets.only(bottom: 20),
@@ -276,12 +301,14 @@ class StatsPageState extends State<StatsPage> {
                                     width: 40,
                                     height: barHeight.clamp(15.0, 180.0),
                                     decoration: BoxDecoration(
-                                      color: Colors.white,
+                                      color: countKey == 'purchases'
+                                          ? Colors.amber
+                                          : Colors.white,
                                       borderRadius: BorderRadius.circular(6),
                                     ),
                                     alignment: Alignment.center,
                                     child: Text(
-                                      salesCount.toString(),
+                                      count.toString(),
                                       style: const TextStyle(
                                         color: Colors.black,
                                         fontSize: 12,
@@ -331,10 +358,24 @@ class StatsPageState extends State<StatsPage> {
   }
 }
 
-class _HistoryCard extends StatelessWidget {
+class _HistoryCard extends StatefulWidget {
   const _HistoryCard({required this.item});
 
   final Map<String, dynamic> item;
+
+  @override
+  State<_HistoryCard> createState() => _HistoryCardState();
+}
+
+class _HistoryCardState extends State<_HistoryCard> {
+  final DatabaseHelper _dbHelper = DatabaseHelper();
+  late int _isPaid;
+
+  @override
+  void initState() {
+    super.initState();
+    _isPaid = widget.item['paid'] as int? ?? 0;
+  }
 
   String _formatDate(String? dateStr) {
     if (dateStr == null) return 'Data não disponível';
@@ -354,58 +395,108 @@ class _HistoryCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final clientName =
-        item['client_name'] as String? ?? 'Cliente não disponível';
+        widget.item['client_name'] as String? ?? 'Cliente não disponível';
     final productName =
-        item['product_name'] as String? ?? 'Produto não disponível';
-    final totalPrice = item['total_price'] as double? ?? 0.0;
-    final quantity = item['quantity'] as int? ?? 1;
-    final saleDate = item['sale_date'] as String?;
+        widget.item['product_name'] as String? ?? 'Produto não disponível';
+    final totalPrice = widget.item['total_price'] as double? ?? 0.0;
+    final quantity = widget.item['quantity'] as int? ?? 1;
+    final saleDate = widget.item['sale_date'] as String?;
+    final saleId = widget.item['id'] as int?;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: const Color(0xFF1a1a2e),
+        color: _isPaid == 1 ? const Color(0xFF0d3b1f) : const Color(0xFF1a1a2e),
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: Colors.grey[800]!, width: 1),
+        border: Border.all(
+          color: _isPaid == 1 ? Colors.green[700]! : Colors.grey[800]!,
+          width: 1,
+        ),
       ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  clientName,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w700,
+      child: GestureDetector(
+        onTap: () async {
+          if (saleId != null) {
+            final newPaidStatus = _isPaid == 0 ? 1 : 0;
+            await _dbHelper.updateSalePaidStatus(saleId, newPaidStatus == 1);
+            setState(() {
+              _isPaid = newPaidStatus;
+            });
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text(
+                    _isPaid == 1
+                        ? 'Compra marcada como paga'
+                        : 'Compra marcada como não paga',
                   ),
                 ),
-                const SizedBox(height: 4),
+              );
+            }
+          }
+        },
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    clientName,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    '$productName (x$quantity)',
+                    style: TextStyle(color: Colors.grey[500], fontSize: 12),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    _formatDate(saleDate),
+                    style: TextStyle(color: Colors.grey[500], fontSize: 12),
+                  ),
+                ],
+              ),
+            ),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
                 Text(
-                  '$productName (x$quantity)',
-                  style: TextStyle(color: Colors.grey[500], fontSize: 12),
+                  'R\$ ${totalPrice.toStringAsFixed(2)}',
+                  style: const TextStyle(
+                    color: Colors.green,
+                    fontSize: 14,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
-                const SizedBox(height: 4),
-                Text(
-                  _formatDate(saleDate),
-                  style: TextStyle(color: Colors.grey[500], fontSize: 12),
+                const SizedBox(height: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 4,
+                  ),
+                  decoration: BoxDecoration(
+                    color: _isPaid == 1 ? Colors.green : Colors.red,
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: Text(
+                    _isPaid == 1 ? 'Pago' : 'Pendente',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
                 ),
               ],
             ),
-          ),
-          Text(
-            'R\$ ${totalPrice.toStringAsFixed(2)}',
-            style: const TextStyle(
-              color: Colors.green,
-              fontSize: 14,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

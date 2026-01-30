@@ -22,7 +22,29 @@ class DatabaseHelper {
   Future<Database> _initDatabase() async {
     Directory documentsDirectory = await getApplicationDocumentsDirectory();
     String path = join(documentsDirectory.path, 'mobig.db');
-    return openDatabase(path, version: 1, onCreate: _createTables);
+    return openDatabase(
+      path,
+      version: 2,
+      onCreate: _createTables,
+      onUpgrade: _upgradeDatabase,
+    );
+  }
+
+  Future<void> _upgradeDatabase(
+    Database db,
+    int oldVersion,
+    int newVersion,
+  ) async {
+    if (oldVersion < 2) {
+      // Adicionar coluna 'paid' à tabela sales se não existir
+      try {
+        await db.execute(
+          'ALTER TABLE sales ADD COLUMN paid INTEGER NOT NULL DEFAULT 0',
+        );
+      } catch (e) {
+        // Coluna já existe, ignorar erro
+      }
+    }
   }
 
   Future<void> _createTables(Database db, int version) async {
@@ -61,6 +83,7 @@ class DatabaseHelper {
         unit_price REAL NOT NULL,
         total_price REAL NOT NULL,
         notes TEXT,
+        paid INTEGER NOT NULL DEFAULT 0,
         sale_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (client_id) REFERENCES clients(id),
         FOREIGN KEY (product_id) REFERENCES products(id)
@@ -187,15 +210,18 @@ class DatabaseHelper {
     required double unitPrice,
     required double totalPrice,
     String? notes,
+    bool paid = false,
   }) async {
     final db = await database;
 
-    // Atualizar dados do cliente
-    final client = await getClient(clientId);
-    if (client != null) {
-      final newPurchases = (client['purchases'] as int) + 1;
-      final newTotal = (client['total_value'] as double) + totalPrice;
-      await updateClientStats(clientId, newPurchases, newTotal);
+    // Atualizar dados do cliente apenas se a compra for marcada como paga
+    if (paid) {
+      final client = await getClient(clientId);
+      if (client != null) {
+        final newPurchases = (client['purchases'] as int) + 1;
+        final newTotal = (client['total_value'] as double) + totalPrice;
+        await updateClientStats(clientId, newPurchases, newTotal);
+      }
     }
 
     return db.insert('sales', {
@@ -205,6 +231,7 @@ class DatabaseHelper {
       'unit_price': unitPrice,
       'total_price': totalPrice,
       'notes': notes,
+      'paid': paid ? 1 : 0,
       'sale_date': DateTime.now().toIso8601String(),
     });
   }
@@ -295,6 +322,55 @@ class DatabaseHelper {
     return db.delete('sales', where: 'id = ?', whereArgs: [id]);
   }
 
+  Future<int> updateSalePaidStatus(int saleId, bool paid) async {
+    final db = await database;
+
+    // Buscar a venda para obter informações
+    final sale = await db.query('sales', where: 'id = ?', whereArgs: [saleId]);
+    if (sale.isEmpty) return 0;
+
+    final saleData = sale.first;
+    final clientId = saleData['client_id'] as int;
+    final totalPrice = saleData['total_price'] as double;
+    final wasPaid = (saleData['paid'] as int) == 1;
+
+    // Se está mudando de não pago para pago
+    if (!wasPaid && paid) {
+      final client = await getClient(clientId);
+      if (client != null) {
+        final newPurchases = (client['purchases'] as int) + 1;
+        final newTotal = (client['total_value'] as double) + totalPrice;
+        await updateClientStats(clientId, newPurchases, newTotal);
+      }
+    }
+    // Se está mudando de pago para não pago
+    else if (wasPaid && !paid) {
+      final client = await getClient(clientId);
+      if (client != null) {
+        final newPurchases = (client['purchases'] as int) - 1;
+        final newTotal = (client['total_value'] as double) - totalPrice;
+        await updateClientStats(clientId, newPurchases, newTotal);
+      }
+    }
+
+    return db.update(
+      'sales',
+      {'paid': paid ? 1 : 0},
+      where: 'id = ?',
+      whereArgs: [saleId],
+    );
+  }
+
+  Future<int> updateClientSalesPaidStatus(int clientId, bool paid) async {
+    final db = await database;
+    return db.update(
+      'sales',
+      {'paid': paid ? 1 : 0},
+      where: 'client_id = ?',
+      whereArgs: [clientId],
+    );
+  }
+
   // ===== ESTATÍSTICAS =====
   Future<int> getTotalProducts() async {
     final db = await database;
@@ -341,16 +417,32 @@ class DatabaseHelper {
     );
   }
 
+  Future<List<Map<String, dynamic>>> getTopClients({int limit = 3}) async {
+    final db = await database;
+    return db.rawQuery(
+      '''
+      SELECT c.id, c.name, c.purchases, c.total_value
+      FROM clients c
+      WHERE c.purchases > 0
+      ORDER BY c.purchases DESC
+      LIMIT ?
+    ''',
+      [limit],
+    );
+  }
+
   Future<int> getTotalSalesAll() async {
     final db = await database;
-    final result = await db.rawQuery('SELECT COUNT(*) as count FROM sales');
+    final result = await db.rawQuery(
+      'SELECT COUNT(*) as count FROM sales WHERE paid = 1',
+    );
     return (result.first['count'] as int?) ?? 0;
   }
 
   Future<double> getTotalRevenueAll() async {
     final db = await database;
     final result = await db.rawQuery('''
-      SELECT SUM(total_price) as total FROM sales
+      SELECT SUM(total_price) as total FROM sales WHERE paid = 1
     ''');
     return (result.first['total'] as double?) ?? 0.0;
   }
