@@ -228,23 +228,25 @@ class DatabaseHelper {
     });
   }
 
-
-  Future<List<Map<String, dynamic>>> getSales({int? clientId, int? limit}) async {
+  Future<List<Map<String, dynamic>>> getSales({
+    int? clientId,
+    int? limit,
+  }) async {
     final db = await database;
     String where = '';
     List<dynamic> args = [];
-    
+
     if (clientId != null) {
       where = 'WHERE s.client_id = ?';
       args.add(clientId);
     }
-    
+
     String limitClause = '';
     if (limit != null) {
       limitClause = 'LIMIT ?';
       args.add(limit);
     }
-    
+
     return db.rawQuery('''
       SELECT s.*, c.name as client_name, p.name as product_name
       FROM sales s
@@ -282,11 +284,9 @@ class DatabaseHelper {
     );
   }
 
-
-
   Future<int> deleteSale(int id) async {
     final db = await database;
-    
+
     // Buscar a venda para obter informações antes de deletar
     final sale = await db.query('sales', where: 'id = ?', whereArgs: [id]);
     if (sale.isEmpty) return 0;
@@ -312,7 +312,11 @@ class DatabaseHelper {
 
     // Buscar a venda em transação
     return db.transaction((txn) async {
-      final sale = await txn.query('sales', where: 'id = ?', whereArgs: [saleId]);
+      final sale = await txn.query(
+        'sales',
+        where: 'id = ?',
+        whereArgs: [saleId],
+      );
       if (sale.isEmpty) return 0;
 
       final saleData = sale.first;
@@ -429,7 +433,6 @@ class DatabaseHelper {
     return (result.first['total'] as double?) ?? 0.0;
   }
 
-
   // ===== LIMPEZA =====
   Future<void> deleteAllData() async {
     final db = await database;
@@ -447,7 +450,7 @@ class DatabaseHelper {
       await _database!.close();
       _database = null;
     }
-    
+
     Directory documentsDirectory = await getApplicationDocumentsDirectory();
     String path = join(documentsDirectory.path, 'mobig.db');
     final file = File(path);
