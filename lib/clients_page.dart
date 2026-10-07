@@ -2,9 +2,13 @@ import 'package:flutter/material.dart';
 import 'database/database_helper.dart';
 
 class ClientsPage extends StatefulWidget {
-  const ClientsPage({super.key, required this.clients});
+  const ClientsPage({super.key, required this.clients, this.onChanged});
 
   final List<Map<String, String>> clients;
+
+  /// Chamado depois de qualquer alteração (criar, editar, excluir, marcar
+  /// como pago) para que o dashboard recarregue seus números.
+  final VoidCallback? onChanged;
 
   @override
   State<ClientsPage> createState() => ClientsPageState();
@@ -22,26 +26,40 @@ class ClientsPageState extends State<ClientsPage> {
     loadClients();
   }
 
+  // O indicador de carregamento só aparece na primeira carga; nas recargas a
+  // lista é atualizada sem piscar e sem perder a posição de rolagem.
   Future<void> loadClients() async {
-    setState(() {
-      _isLoading = true;
-    });
-
     final clients = await _dbHelper.getClients();
+    if (!mounted) return;
     setState(() {
-      _clients = clients
-          .map(
-            (c) => {
-              'id': c['id'].toString(),
-              'name': c['name'] as String,
-              'nickname': c['nickname'] as String? ?? '',
-              'purchases': (c['purchases'] as int).toString(),
-              'total': 'R\$ ${(c['total_value'] as double).toStringAsFixed(2)}',
-              'email': c['nickname'] as String? ?? '',
-            },
-          )
-          .toList();
+      _clients = clients.map((c) {
+        final pending = (c['pending_value'] as num).toDouble();
+        return {
+          'id': c['id'].toString(),
+          'name': c['name'] as String,
+          'nickname': c['nickname'] as String? ?? '',
+          'purchases': (c['purchases'] as num).toInt().toString(),
+          // Valor já pago (verde)
+          'total':
+              'R\$ ${(c['total_value'] as num).toDouble().toStringAsFixed(2)}',
+          // Valor das compras ainda não pagas (vermelho)
+          'pending': 'R\$ ${pending.toStringAsFixed(2)}',
+          'has_pending': pending > 0 ? 'true' : 'false',
+          'email': c['nickname'] as String? ?? '',
+        };
+      }).toList();
+      // A seleção é guardada pela posição na lista. Depois de recarregar, as
+      // posições podem ter mudado, então a seleção é descartada.
+      selectedClients.clear();
       _isLoading = false;
+    });
+  }
+
+  /// Abre o diálogo de novo cliente (acionado pelo botão + da tela inicial).
+  void showAddClientDialog() {
+    _showAddClientDialog(context, () {
+      loadClients();
+      widget.onChanged?.call();
     });
   }
 
@@ -78,30 +96,14 @@ class ClientsPageState extends State<ClientsPage> {
                       fontWeight: FontWeight.bold,
                     ),
                   ),
-                if (selectedClients.isEmpty)
-                  ElevatedButton.icon(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF1558c9),
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 10,
-                      ),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                    ),
-                    onPressed: () {
-                      _showAddClientDialog(context, () => loadClients());
-                    },
-                    icon: const Icon(Icons.add, size: 18),
-                    label: const Text('Adicionar'),
-                  )
-                else
+                if (selectedClients.isNotEmpty)
                   IconButton(
                     onPressed: _deleteSelectedClients,
                     icon: const Icon(Icons.delete, color: Colors.red),
-                  ),
+                  )
+                else
+                  // Mantém a altura do cabeçalho igual com ou sem seleção
+                  const SizedBox(height: 48),
               ],
             ),
             const SizedBox(height: 16),
@@ -148,7 +150,10 @@ class ClientsPageState extends State<ClientsPage> {
                       }
                     });
                   } else {
-                    _showEditClientDialog(context, client);
+                    _showEditClientDialog(context, client, () {
+                      loadClients();
+                      widget.onChanged?.call();
+                    });
                   }
                 },
               );
@@ -162,7 +167,7 @@ class ClientsPageState extends State<ClientsPage> {
   void _deleteSelectedClients() {
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (dialogContext) => AlertDialog(
         backgroundColor: const Color(0xFF1a1a2e),
         title: const Text(
           'Confirmar exclusão',
@@ -174,29 +179,31 @@ class ClientsPageState extends State<ClientsPage> {
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context),
+            onPressed: () => Navigator.pop(dialogContext),
             child: const Text('Cancelar'),
           ),
           TextButton(
             onPressed: () async {
-              final dbHelper = DatabaseHelper();
-              Navigator.pop(context);
+              Navigator.pop(dialogContext);
 
-              for (int index in selectedClients.toList()) {
-                if (index < _clients.length) {
-                  final clientId = _clients[index]['id'];
-                  if (clientId != null) {
-                    await dbHelper.deleteClient(int.parse(clientId));
-                  }
-                }
+              // Ids dos clientes selecionados (a seleção é por posição)
+              final ids = selectedClients
+                  .where((index) => index < _clients.length)
+                  .map((index) => int.parse(_clients[index]['id']!))
+                  .toList();
+
+              for (final id in ids) {
+                await _dbHelper.deleteClient(id);
               }
 
+              // Recarrega a lista (isso também limpa a seleção) e o dashboard,
+              // que guarda contadores e atividade recente em memória.
               await loadClients();
-              setState(() {
-                selectedClients.clear();
-              });
+              widget.onChanged?.call();
 
-              if (context.mounted) {
+              // Usa o context/mounted da página: o do diálogo já foi fechado
+              // e, por isso, o aviso de sucesso nunca aparecia.
+              if (mounted) {
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(
                     content: Text('Clientes excluídos com sucesso!'),
@@ -212,7 +219,11 @@ class ClientsPageState extends State<ClientsPage> {
   }
 }
 
-void _showEditClientDialog(BuildContext context, Map<String, String> client) {
+void _showEditClientDialog(
+  BuildContext context,
+  Map<String, String> client,
+  VoidCallback onChanged,
+) {
   final nameController = TextEditingController(text: client['name']);
   final nicknameController = TextEditingController(text: client['nickname']);
   final dbHelper = DatabaseHelper();
@@ -288,6 +299,7 @@ void _showEditClientDialog(BuildContext context, Map<String, String> client) {
                           clientId,
                           true,
                         );
+                        onChanged();
                         if (context.mounted) {
                           ScaffoldMessenger.of(context).showSnackBar(
                             const SnackBar(
@@ -319,6 +331,7 @@ void _showEditClientDialog(BuildContext context, Map<String, String> client) {
                           clientId,
                           false,
                         );
+                        onChanged();
                         if (context.mounted) {
                           ScaffoldMessenger.of(context).showSnackBar(
                             const SnackBar(
@@ -362,6 +375,7 @@ void _showEditClientDialog(BuildContext context, Map<String, String> client) {
                       name: nameController.text,
                       nickname: nicknameController.text,
                     );
+                    onChanged();
 
                     if (context.mounted) {
                       Navigator.pop(context);
@@ -647,13 +661,16 @@ class _ClientCard extends StatelessWidget {
                     style: TextStyle(color: Colors.grey[500], fontSize: 12),
                   ),
                   const SizedBox(height: 8),
-                  Row(
+                  Wrap(
+                    spacing: 10,
+                    runSpacing: 4,
+                    crossAxisAlignment: WrapCrossAlignment.center,
                     children: [
                       Text(
                         '${client['purchases']} compras',
                         style: TextStyle(color: Colors.grey[500], fontSize: 12),
                       ),
-                      const SizedBox(width: 12),
+                      // Verde: valor já pago
                       Text(
                         client['total']!,
                         style: const TextStyle(
@@ -662,6 +679,25 @@ class _ClientCard extends StatelessWidget {
                           fontWeight: FontWeight.bold,
                         ),
                       ),
+                      // Vermelho: valor das compras feitas e ainda não pagas
+                      // (só aparece quando o cliente está devendo)
+                      if (client['has_pending'] == 'true') ...[
+                        Text(
+                          '•',
+                          style: TextStyle(
+                            color: Colors.grey[600],
+                            fontSize: 14,
+                          ),
+                        ),
+                        Text(
+                          client['pending']!,
+                          style: const TextStyle(
+                            color: Colors.red,
+                            fontSize: 14,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ],
                     ],
                   ),
                 ],

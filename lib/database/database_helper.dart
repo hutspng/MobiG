@@ -161,9 +161,24 @@ class DatabaseHelper {
     return db.insert('clients', {'name': name, 'nickname': nickname});
   }
 
+  // Retorna os clientes já com os valores calculados a partir das vendas:
+  //  - purchases / total_value: compras PAGAS (quantidade e valor)
+  //  - pending_value: valor das compras feitas e ainda NÃO pagas
+  // Calcular direto da tabela sales evita divergência com as colunas
+  // clients.purchases / clients.total_value (que não eram atualizadas por
+  // "Marcar Tudo" / "Desmarcar Tudo").
   Future<List<Map<String, dynamic>>> getClients() async {
     final db = await database;
-    return db.query('clients', orderBy: 'name');
+    return db.rawQuery('''
+      SELECT c.id, c.name, c.nickname, c.created_at,
+        COALESCE(SUM(CASE WHEN s.paid = 1 THEN 1 ELSE 0 END), 0) AS purchases,
+        COALESCE(SUM(CASE WHEN s.paid = 1 THEN s.total_price ELSE 0.0 END), 0.0) AS total_value,
+        COALESCE(SUM(CASE WHEN s.paid = 0 THEN s.total_price ELSE 0.0 END), 0.0) AS pending_value
+      FROM clients c
+      LEFT JOIN sales s ON s.client_id = c.id
+      GROUP BY c.id
+      ORDER BY c.name
+    ''');
   }
 
   Future<Map<String, dynamic>?> getClient(int id) async {
@@ -389,7 +404,7 @@ class DatabaseHelper {
     return (result.first['total'] as double?) ?? 0.0;
   }
 
-  Future<List<Map<String, dynamic>>> getTopProducts({int limit = 5}) async {
+  Future<List<Map<String, dynamic>>> getTopProducts({int limit = 3}) async {
     final db = await database;
     return db.rawQuery(
       '''
@@ -397,7 +412,7 @@ class DatabaseHelper {
       FROM products p
       LEFT JOIN sales s ON p.id = s.product_id
       GROUP BY p.id
-      ORDER BY sales_count DESC
+      ORDER BY sales_count DESC, p.name ASC
       LIMIT ?
     ''',
       [limit],
@@ -408,9 +423,13 @@ class DatabaseHelper {
     final db = await database;
     return db.rawQuery(
       '''
-      SELECT c.id, c.name, c.purchases, c.total_value
+      SELECT c.id, c.name,
+        COALESCE(SUM(CASE WHEN s.paid = 1 THEN 1 ELSE 0 END), 0) AS purchases,
+        COALESCE(SUM(CASE WHEN s.paid = 1 THEN s.total_price ELSE 0.0 END), 0.0) AS total_value
       FROM clients c
-      ORDER BY c.purchases DESC, c.name ASC
+      LEFT JOIN sales s ON s.client_id = c.id
+      GROUP BY c.id
+      ORDER BY purchases DESC, c.name ASC
       LIMIT ?
     ''',
       [limit],

@@ -58,7 +58,7 @@ class StatsPageState extends State<StatsPage> {
   }
 
   Future<void> _loadStatsData() async {
-    final topProducts = await _dbHelper.getTopProducts(limit: 5);
+    final topProducts = await _dbHelper.getTopProducts(limit: 3);
     final topClients = await _dbHelper.getTopClients(limit: 3);
     final allSales = _dailyFocus
         ? await _dbHelper.getSalesToday()

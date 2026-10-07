@@ -2,9 +2,13 @@ import 'package:flutter/material.dart';
 import 'database/database_helper.dart';
 
 class ProductsPage extends StatefulWidget {
-  const ProductsPage({super.key, required this.products});
+  const ProductsPage({super.key, required this.products, this.onChanged});
 
   final List<Map<String, String>> products;
+
+  /// Chamado depois de qualquer alteração (criar, excluir) para que o
+  /// dashboard recarregue seus números.
+  final VoidCallback? onChanged;
 
   @override
   State<ProductsPage> createState() => ProductsPageState();
@@ -22,12 +26,11 @@ class ProductsPageState extends State<ProductsPage> {
     loadProducts();
   }
 
+  // O indicador de carregamento só aparece na primeira carga; nas recargas a
+  // lista é atualizada sem piscar e sem perder a posição de rolagem.
   Future<void> loadProducts() async {
-    setState(() {
-      _isLoading = true;
-    });
-
     final products = await _dbHelper.getProducts();
+    if (!mounted) return;
     setState(() {
       _products = products
           .map(
@@ -41,7 +44,18 @@ class ProductsPageState extends State<ProductsPage> {
             },
           )
           .toList();
+      // A seleção é guardada pela posição na lista. Depois de recarregar, as
+      // posições podem ter mudado, então a seleção é descartada.
+      selectedProducts.clear();
       _isLoading = false;
+    });
+  }
+
+  /// Abre o diálogo de novo produto (acionado pelo botão + da tela inicial).
+  void showAddProductDialog() {
+    _showAddProductDialog(context, () {
+      loadProducts();
+      widget.onChanged?.call();
     });
   }
 
@@ -78,30 +92,14 @@ class ProductsPageState extends State<ProductsPage> {
                       fontWeight: FontWeight.bold,
                     ),
                   ),
-                if (selectedProducts.isEmpty)
-                  ElevatedButton.icon(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF1558c9),
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 10,
-                      ),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                    ),
-                    onPressed: () {
-                      _showAddProductDialog(context, () => loadProducts());
-                    },
-                    icon: const Icon(Icons.add, size: 18),
-                    label: const Text('Adicionar'),
-                  )
-                else
+                if (selectedProducts.isNotEmpty)
                   IconButton(
                     onPressed: _deleteSelectedProducts,
                     icon: const Icon(Icons.delete, color: Colors.red),
-                  ),
+                  )
+                else
+                  // Mantém a altura do cabeçalho igual com ou sem seleção
+                  const SizedBox(height: 48),
               ],
             ),
             const SizedBox(height: 16),
@@ -162,7 +160,7 @@ class ProductsPageState extends State<ProductsPage> {
   void _deleteSelectedProducts() {
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (dialogContext) => AlertDialog(
         backgroundColor: const Color(0xFF1a1a2e),
         title: const Text(
           'Confirmar exclusão',
@@ -174,29 +172,29 @@ class ProductsPageState extends State<ProductsPage> {
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context),
+            onPressed: () => Navigator.pop(dialogContext),
             child: const Text('Cancelar'),
           ),
           TextButton(
             onPressed: () async {
-              final dbHelper = DatabaseHelper();
-              Navigator.pop(context);
+              Navigator.pop(dialogContext);
 
-              for (int index in selectedProducts.toList()) {
-                if (index < _products.length) {
-                  final productId = _products[index]['id'];
-                  if (productId != null) {
-                    await dbHelper.deleteProduct(int.parse(productId));
-                  }
-                }
+              // Ids dos produtos selecionados (a seleção é por posição)
+              final ids = selectedProducts
+                  .where((index) => index < _products.length)
+                  .map((index) => int.parse(_products[index]['id']!))
+                  .toList();
+
+              for (final id in ids) {
+                await _dbHelper.deleteProduct(id);
               }
 
+              // Recarrega a lista (isso também limpa a seleção) e o dashboard
               await loadProducts();
-              setState(() {
-                selectedProducts.clear();
-              });
+              widget.onChanged?.call();
 
-              if (context.mounted) {
+              // Usa o context/mounted da página: o do diálogo já foi fechado
+              if (mounted) {
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(
                     content: Text('Produtos excluídos com sucesso!'),

@@ -30,8 +30,9 @@ Aplicativo Flutter para gerenciamento de produtos, clientes e registros de venda
 - ✅ Editar informações do cliente
 - ✅ Deletar cliente (remove cliente e todas as suas vendas)
 - ✅ Visualizar estatísticas por cliente:
-  - Número total de compras
-  - Valor total gasto
+  - Número de compras pagas
+  - Valor já pago (verde)
+  - Valor das compras feitas e ainda não pagas (vermelho, só aparece se o cliente estiver devendo)
 
 ### Vendas
 - ✅ Registrar nova venda com:
@@ -44,7 +45,7 @@ Aplicativo Flutter para gerenciamento de produtos, clientes e registros de venda
 - ✅ Atualização automática do dashboard após nova venda
 
 ### Estatísticas (Stats)
-- ✅ Gráfico dos 5 produtos mais vendidos (por quantidade)
+- ✅ Gráfico dos 3 produtos mais vendidos (por quantidade)
 - ✅ Histórico completo de vendas em ordem cronológica reversa
 - ✅ Modo "Foco Diário" para visualizar apenas vendas do dia
 - ✅ Botão para voltar ao topo da página
@@ -144,14 +145,16 @@ dependencies:
 
 ### Fluxo de Uso
 
-1. **Adicionar Produtos**: Navegue para a aba "Produtos" e toque no botão flutuante (+) para criar novo produto
+O botão flutuante (+) muda de função conforme a aba selecionada:
 
-2. **Adicionar Clientes**: Navegue para a aba "Clientes" e toque no botão flutuante (+) para criar novo cliente
+1. **Adicionar Produtos**: na aba "Produtos", toque no (+) para criar um novo produto
 
-3. **Registrar Vendas**: Toque no botão flutuante (+) em qualquer aba (exceto Stats) para registrar uma nova compra
+2. **Adicionar Clientes**: na aba "Clientes", toque no (+) para criar um novo cliente
+
+3. **Registrar Vendas**: na aba "Início", toque no (+) para registrar uma nova compra (na aba "Stats" não há botão)
 
 4. **Visualizar Estatísticas**: Acesse a aba "Stats" para ver:
-   - Gráfico dos 5 produtos mais vendidos
+   - Gráfico dos 3 produtos mais vendidos
    - Histórico completo de vendas
    - Opção de filtrar por data (Foco Diário)
 

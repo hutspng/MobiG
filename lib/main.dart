@@ -129,9 +129,13 @@ class HomePage extends StatefulWidget {
 class HomePageState extends State<HomePage> {
   int _selectedIndex = 0;
 
-  // Método público para recarregar os dados do dashboard
+  // Método público: recarrega o dashboard e também as abas que estiverem
+  // abertas (usado após registrar compra e após "Deletar Dados").
   Future<void> refresh() async {
     await _loadInitialData();
+    _productsKey.currentState?.loadProducts();
+    _clientsKey.currentState?.loadClients();
+    _statsKey.currentState?.refresh();
   }
 
   final DatabaseHelper _dbHelper = DatabaseHelper();
@@ -169,6 +173,7 @@ class HomePageState extends State<HomePage> {
     final clients = await _dbHelper.getTotalClients();
     final sales = await _dbHelper.getTotalSalesAll();
     final revenue = await _dbHelper.getTotalRevenueAll();
+    if (!mounted) return;
     setState(() {
       _totalProducts = products;
       _totalClients = clients;
@@ -179,6 +184,7 @@ class HomePageState extends State<HomePage> {
 
   Future<void> _loadRecentActivities() async {
     final activities = await _dbHelper.getSales(limit: 5);
+    if (!mounted) return;
     setState(() {
       _recentActivities = activities;
     });
@@ -186,6 +192,7 @@ class HomePageState extends State<HomePage> {
 
   Future<void> _loadProducts() async {
     final products = await _dbHelper.getProducts();
+    if (!mounted) return;
     setState(() {
       _products = products
           .map(
@@ -204,6 +211,7 @@ class HomePageState extends State<HomePage> {
 
   Future<void> _loadClients() async {
     final clients = await _dbHelper.getClients();
+    if (!mounted) return;
     setState(() {
       _clients = clients
           .map(
@@ -218,6 +226,57 @@ class HomePageState extends State<HomePage> {
           )
           .toList();
     });
+  }
+
+  // Troca de aba. Ao entrar no Início o dashboard é recarregado, porque
+  // ele guarda contadores e atividade recente em memória e ficava
+  // desatualizado após excluir/editar algo em outra aba.
+  void _selectTab(int index) {
+    setState(() {
+      _selectedIndex = index;
+    });
+    if (index == 0) {
+      _loadInitialData();
+    }
+  }
+
+  Future<void> _openNewSale() async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (context) => const SalesPage()),
+    );
+    // Uma compra nova muda o dashboard, os valores pago/pendente dos
+    // clientes e as estatísticas.
+    await refresh();
+  }
+
+  // O botão + muda de função conforme a aba selecionada.
+  Widget? _buildFab() {
+    switch (_selectedIndex) {
+      case 0:
+        return _buildAddButton('Nova compra', _openNewSale);
+      case 1:
+        return _buildAddButton(
+          'Novo produto',
+          () => _productsKey.currentState?.showAddProductDialog(),
+        );
+      case 2:
+        return _buildAddButton(
+          'Novo cliente',
+          () => _clientsKey.currentState?.showAddClientDialog(),
+        );
+      default:
+        return null; // Stats não tem botão de adicionar
+    }
+  }
+
+  Widget _buildAddButton(String tooltip, VoidCallback onPressed) {
+    return FloatingActionButton(
+      tooltip: tooltip,
+      backgroundColor: const Color(0xFF1558c9),
+      onPressed: onPressed,
+      child: const Icon(Icons.add, size: 28),
+    );
   }
 
   @override
@@ -247,38 +306,26 @@ class HomePageState extends State<HomePage> {
       body: _selectedIndex == 0
           ? _buildHomeContent()
           : _selectedIndex == 1
-          ? ProductsPage(key: _productsKey, products: _products)
+          ? ProductsPage(
+              key: _productsKey,
+              products: _products,
+              onChanged: _loadInitialData,
+            )
           : _selectedIndex == 2
-          ? ClientsPage(key: _clientsKey, clients: _clients)
+          ? ClientsPage(
+              key: _clientsKey,
+              clients: _clients,
+              onChanged: _loadInitialData,
+            )
           : StatsPage(
               key: _statsKey,
               bestSellers: _bestSellers,
               history: _history,
             ),
-      floatingActionButton: _selectedIndex == 3
-          ? null // Não mostrar FAB na página Stats
-          : FloatingActionButton(
-              backgroundColor: const Color(0xFF1558c9),
-              child: const Icon(Icons.add, size: 28),
-              onPressed: () async {
-                await Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (context) => const SalesPage()),
-                );
-                // Recarregar dados após adicionar venda
-                homeKey.currentState?.refresh();
-                _productsKey.currentState?.loadProducts();
-                _clientsKey.currentState?.loadClients();
-                _statsKey.currentState?.refresh();
-              },
-            ),
+      floatingActionButton: _buildFab(),
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _selectedIndex,
-        onTap: (index) {
-          setState(() {
-            _selectedIndex = index;
-          });
-        },
+        onTap: _selectTab,
         backgroundColor: const Color(0xFF01060c),
         selectedItemColor: Colors.cyan,
         unselectedItemColor: Colors.grey[600],
@@ -331,7 +378,7 @@ class HomePageState extends State<HomePage> {
                 crossAxisSpacing: 16,
                 children: [
                   GestureDetector(
-                    onTap: () => setState(() => _selectedIndex = 1),
+                    onTap: () => _selectTab(1),
                     child: _buildStatCard(
                       icon: Icons.shopping_bag,
                       number: _totalProducts.toString(),
@@ -339,7 +386,7 @@ class HomePageState extends State<HomePage> {
                     ),
                   ),
                   GestureDetector(
-                    onTap: () => setState(() => _selectedIndex = 2),
+                    onTap: () => _selectTab(2),
                     child: _buildStatCard(
                       icon: Icons.people,
                       number: _totalClients.toString(),
@@ -352,7 +399,7 @@ class HomePageState extends State<HomePage> {
                     label: 'Compras totais',
                   ),
                   GestureDetector(
-                    onTap: () => setState(() => _selectedIndex = 3),
+                    onTap: () => _selectTab(3),
                     child: _buildStatCard(
                       icon: Icons.attach_money,
                       number: 'R\$ ${_totalRevenue.toStringAsFixed(2)}',
